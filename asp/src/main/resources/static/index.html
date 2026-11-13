@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign a document</title>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">e</span> eSign <span>Application provider</span></a>
+    <nav class="bar-nav"><a href="/docs.html">Documentation</a><span class="spec">API 3.3</span></nav>
+  </header>
+  <main class="layout">
+    <section>
+      <p class="kicker">CCA reference</p>
+      <h1>Sign a document</h1>
+      <p class="lead">Upload a PDF to sign it in place, or any other file to place it in a new PDF. This application sends the SHA-256 of the PDF byte range to the eSign service provider and embeds the returned signature.</p>
+      <dl class="facts">
+        <div><dt>Demo signer</dt><dd>demo.user@username.ESP001</dd></div>
+        <div><dt>PIN</dt><dd>123456</dd></div>
+        <div><dt>One-time password</dt><dd>Shown on the authentication page. No SMS is sent.</dd></div>
+      </dl>
+    </section>
+    <form id="sign" class="card">
+      <label>Document information
+        <input name="docInfo" maxlength="50" value="Sample agreement" required>
+      </label>
+      <p class="hint">Up to 50 characters. This title is shown to the signer.</p>
+      <label>File
+        <input name="file" type="file" required>
+      </label>
+      <label>Signer id
+        <input name="signerId" value="demo.user@username.ESP001" required>
+      </label>
+      <div class="row">
+        <label>Algorithm
+          <select name="signingAlgorithm"><option>RSA</option><option>ECDSA</option></select>
+        </label>
+        <label>Signature type
+          <select name="responseSigType">
+            <option selected>PKCS7pdf</option>
+            <option>PKCS7</option>
+            <option>PKCS7complete</option>
+            <option>raw</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">PKCS7, PKCS7pdf, and PKCS7complete produce a signed PDF. raw returns a detached signature only.</p>
+      <div id="placement" hidden>
+        <div class="place-head">
+          <strong>Signature location</strong>
+          <span>
+            <button class="secondary" type="button" id="prevPage">Previous</button>
+            <button class="secondary" type="button" id="nextPage">Next</button>
+          </span>
+        </div>
+        <p class="hint" id="pageLabel">Drag the box to where the signature should appear.</p>
+        <div id="stage" class="stage">
+          <img id="pageImg" alt="Page preview">
+          <div id="box" class="sigbox"><span>Sign here</span><i class="handle" data-resize="true"></i></div>
+        </div>
+      </div>
+      <button class="primary" type="submit">Continue to sign</button>
+      <p id="out" class="status" role="status"></p>
+    </form>
+  </main>
+  <script>
+    const out = document.getElementById('out');
+    const form = document.getElementById('sign');
+    const placement = document.getElementById('placement');
+    const pageImg = document.getElementById('pageImg');
+    const box = document.getElementById('box');
+    const pageLabel = document.getElementById('pageLabel');
+    let documentId = null;
+    let uploadedDocInfo = null;
+    let pages = [];
+    let page = 1;
+    let place = { x: 36, y: 36, w: 190, h: 64 };
+
+    const embeds = () => form.responseSigType.value !== 'raw';
+
+    function currentPage() {
+      return pages.find((item) => item.page === page) || pages[0];
+    }
+
+    function clampPlace() {
+      const shown = currentPage();
+      if (!shown) return;
+      place.w = Math.min(Math.max(place.w, 72), shown.width);
+      place.h = Math.min(Math.max(place.h, 36), shown.height);
+      place.x = Math.min(Math.max(place.x, 0), shown.width - place.w);
+      place.y = Math.min(Math.max(place.y, 0), shown.height - place.h);
+    }
+
+    function layoutBox() {
+      const shown = currentPage();
+      if (!shown || !pageImg.clientWidth) return;
+      clampPlace();
+      const scaleX = pageImg.clientWidth / shown.width;
+      const scaleY = pageImg.clientHeight / shown.height;
+      box.style.left = place.x * scaleX + 'px';
+      box.style.top = place.y * scaleY + 'px';
+      box.style.width = place.w * scaleX + 'px';
+      box.style.height = place.h * scaleY + 'px';
+      pageLabel.textContent = `Page ${shown.page} of ${pages.length}. Drag the box. Its top-left is ${Math.round(place.x)} pt across and ${Math.round(place.y)} pt down.`;
+    }
+
+    async function showPage(next) {
+      page = next;
+      pageImg.src = `/api/v1/documents/${documentId}/preview?page=${page}`;
+    }
+
+    async function preparePreview() {
+      placement.hidden = !embeds() || !form.file.files[0];
+      if (placement.hidden) return;
+      out.textContent = 'Preparing the page preview…';
+      const upload = new FormData();
+      upload.append('file', form.file.files[0]);
+      upload.append('docInfo', form.docInfo.value);
+      const stored = await fetch('/api/v1/documents', { method: 'POST', body: upload });
+      const documentJson = await stored.json();
+      if (!stored.ok) {
+        out.textContent = documentJson.errorMessage || 'The document could not be previewed.';
+        return;
+      }
+      documentId = documentJson.documentId;
+      uploadedDocInfo = form.docInfo.value;
+      pages = await (await fetch(`/api/v1/documents/${documentId}/pages`)).json();
+      page = 1;
+      const shown = currentPage();
+      place = { x: 36, y: Math.max(36, shown.height - 64 - 36), w: 190, h: 64 };
+      await showPage(1);
+      out.textContent = '';
+    }
+
+    form.file.addEventListener('change', () => preparePreview().catch((error) => { out.textContent = error.message; }));
+    form.responseSigType.addEventListener('change', () => {
+      placement.hidden = !embeds() || !form.file.files[0];
+      if (!placement.hidden && !documentId) preparePreview();
+    });
+    document.getElementById('prevPage').onclick = () => { if (page > 1) showPage(page - 1); };
+    document.getElementById('nextPage').onclick = () => { if (page < pages.length) showPage(page + 1); };
+    pageImg.addEventListener('load', layoutBox);
+    window.addEventListener('resize', layoutBox);
+
+    let drag = null;
+    box.addEventListener('pointerdown', (event) => {
+      const shown = currentPage();
+      if (!shown) return;
+      drag = {
+        resize: event.target.dataset.resize === 'true',
+        x: event.clientX,
+        y: event.clientY,
+        place: { ...place },
+        scaleX: pageImg.clientWidth / shown.width,
+        scaleY: pageImg.clientHeight / shown.height
+      };
+      box.setPointerCapture(event.pointerId);
+    });
+    box.addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      const dx = (event.clientX - drag.x) / drag.scaleX;
+      const dy = (event.clientY - drag.y) / drag.scaleY;
+      if (drag.resize) {
+        place.w = drag.place.w + dx;
+        place.h = drag.place.h + dy;
+      } else {
+        place.x = drag.place.x + dx;
+        place.y = drag.place.y + dy;
+      }
+      layoutBox();
+    });
+    box.addEventListener('pointerup', () => { drag = null; });
+
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const button = form.querySelector('button.primary');
+      button.disabled = true;
+      out.textContent = 'Preparing the document…';
+      if (!documentId || uploadedDocInfo !== form.docInfo.value) {
+        const upload = new FormData();
+        upload.append('file', form.file.files[0]);
+        upload.append('docInfo', form.docInfo.value);
+        const stored = await fetch('/api/v1/documents', { method: 'POST', body: upload });
+        const documentJson = await stored.json();
+        if (!stored.ok) {
+          out.textContent = documentJson.errorMessage || 'The document could not be stored.';
+          button.disabled = false;
+          return;
+        }
+        documentId = documentJson.documentId;
+        uploadedDocInfo = form.docInfo.value;
+      }
+      out.textContent = 'Contacting the eSign service provider…';
+      const payload = {
+        documentIds: [documentId],
+        signerId: form.signerId.value,
+        signingAlgorithm: form.signingAlgorithm.value,
+        responseSigType: form.responseSigType.value,
+        maxWaitPeriod: 60
+      };
+      if (embeds()) {
+        clampPlace();
+        payload.signaturePage = page;
+        payload.signatureX = place.x;
+        payload.signatureY = place.y;
+        payload.signatureWidth = place.w;
+        payload.signatureHeight = place.h;
+      }
+      const request = await fetch('/api/v1/esign/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const body = await request.json();
+      if (request.ok && body.authenticationUrl) {
+        window.location = body.authenticationUrl;
+        return;
+      }
+      out.textContent = body.errorMessage || 'The signing request was not accepted.';
+      button.disabled = false;
+    };
+  </script>
+</body>
+</html>

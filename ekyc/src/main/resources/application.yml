@@ -1,0 +1,20 @@
+server:
+  port: 8083
+spring:
+  application:
+    name: ekyc
+esign:
+  expose-demo-otp: true
+  seed-demo-user: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+info:
+  app:
+    component: eKYC
+    spec: eSign API 3.3
+logging:
+  level:
+    com.esign: INFO

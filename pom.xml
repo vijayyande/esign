@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.5</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.esign</groupId>
+    <artifactId>esign-platform</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+    <name>eSign API 3.3 reference platform</name>
+    <description>CCA eSign API 3.3 reference components: ASP, ESP, CA, and eKYC.</description>
+
+    <modules>
+        <module>common</module>
+        <module>ekyc</module>
+        <module>ca</module>
+        <module>esp</module>
+        <module>asp</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+        <bouncycastle.version>1.79</bouncycastle.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.esign</groupId>
+                <artifactId>common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

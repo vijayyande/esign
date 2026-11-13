@@ -1,0 +1,28 @@
+server:
+  port: 8081
+spring:
+  application:
+    name: asp
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 22MB
+esign:
+  asp-id: ASP001
+  public-base-url: http://localhost:8081
+  esp-sign-url: http://localhost:8082/api/v1/esign
+  esp-status-url: http://localhost:8082/api/v1/esign/status
+  esp-auth-url: http://localhost:8082/api/v1/esign/auth
+  data-dir: data/asp
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+info:
+  app:
+    component: ASP
+    spec: eSign API 3.3
+logging:
+  level:
+    com.esign: INFO

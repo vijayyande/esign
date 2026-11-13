@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ASP documentation</title>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">e</span> eSign <span>Application provider</span></a>
+    <nav class="bar-nav"><a href="/docs.html">Documentation</a><span class="spec">API 3.3</span></nav>
+  </header>
+  <main class="guide">
+    <p class="kicker">Application service provider · port 8081</p>
+    <h1>ASP documentation</h1>
+    <p class="lead">This service is the application. It stores a file, builds the PDF that will be signed, asks the ESP to sign the PDF byte-range hash, and writes the returned CMS signature back into that PDF.</p>
+    <nav class="toc" aria-label="On this page">
+      <a href="#try">Try the API</a>
+      <a href="#flow">Signing flow</a>
+      <a href="#endpoints">Endpoints</a>
+      <a href="#upload">Upload</a>
+      <a href="#sign">Start signing</a>
+      <a href="#place">Signature location</a>
+      <a href="#files">PDF files</a>
+      <a href="#errors">Errors</a>
+      <a href="#others">Other services</a>
+    </nav>
+
+    <h2 id="try">Try the API</h2>
+    <p>Choose an operation, change the fields, and send the call to this service. The values below are only a starting point.</p>
+    <form class="card tester" id="tester">
+      <label>Operation
+        <select id="operation"></select>
+      </label>
+      <div id="fields"></div>
+      <button class="primary" type="submit">Send</button>
+    </form>
+    <pre class="live" id="live">The response appears here.</pre>
+    <div id="live-extra"></div>
+
+    <h2 id="flow">Signing flow</h2>
+    <ol>
+      <li>Upload a file with <code>docInfo</code> (1–50 characters).</li>
+      <li>For a CMS signature, place the visual box on the page preview. Coordinates are PDF points from the top-left.</li>
+      <li><code>POST /api/v1/esign/requests</code>. The ASP signs an <code>Esign</code> document (version 3.3) and posts it to the ESP.</li>
+      <li>Open <code>authenticationUrl</code>. The signer enters PIN <code>123456</code> and the one-time password shown on that page.</li>
+      <li>The ESP posts <code>EsignResp</code> here, then the browser returns. Download <code>signed.pdf</code>.</li>
+    </ol>
+    <p>Demo signer: <code>demo.user@username.ESP001</code>. Aliases: <code>9876543210@Mobile.ESP001</code> and <code>ABCDE1234F@PAN.ESP001</code>.</p>
+
+    <h2 id="endpoints">Endpoints</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/</code></td><td>Upload page, including the signature-location preview</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/documents</code></td><td>Multipart <code>file</code> and <code>docInfo</code></td></tr>
+        <tr><td>GET</td><td><code>/api/v1/documents</code></td><td>Documents stored in this process</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/documents/{id}/pages</code></td><td>Page size and rotation, in PDF points</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/documents/{id}/preview?page=1</code></td><td>PNG of that page</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/documents/{id}/content</code></td><td>Original upload</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/documents/{id}/prepared</code></td><td>PDF whose byte range was hashed</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/documents/{id}/signed.pdf</code></td><td>PDF with the CMS signature embedded</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/documents/{id}/signature</code></td><td>Hash, signature, certificate, and <code>verified</code></td></tr>
+        <tr><td>POST</td><td><code>/api/v1/esign/requests</code></td><td>Start signing. Returns <code>authenticationUrl</code></td></tr>
+        <tr><td>POST</td><td><code>/api/v1/esign/callback</code></td><td>ESP <code>responseUrl</code>. Body is <code>EsignResp</code></td></tr>
+        <tr><td>POST</td><td><code>/api/v1/esign/return</code></td><td>Form field <code>txnref</code> from the ESP redirect</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/esign/transactions</code></td><td>Transactions in memory</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/esign/transactions/{txn}</code></td><td>Last known state</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/esign/transactions/{txn}/status</code></td><td>Poll the ESP with <code>EsignStatus</code></td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta</code></td><td>Component name and spec version</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta/certificate</code></td><td>PEM of the ASP XML signing certificate</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta/error-codes</code></td><td>Section 5 catalogue</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/audit</code></td><td>Recent audit events</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="upload">Upload</h2>
+    <p>An existing PDF is signed in place. Any other file is wrapped on an A4 page, and the original bytes are attached. The upload limit is 20 MB.</p>
+<pre>curl.exe -s -F "file=@agreement.txt" -F "docInfo=Sample agreement" http://localhost:8081/api/v1/documents</pre>
+<pre>{
+  "documentId": "ac9fe9e8c23044dab791594268813cec",
+  "fileName": "agreement.txt",
+  "docInfo": "Sample agreement",
+  "hashHex": "b1333fa4a04f9597efc940d478a183573d0c8196b2c33e37fdce7872a831aa54",
+  "docUrl": "/api/v1/documents/ac9fe9e8c23044dab791594268813cec/content"
+}</pre>
+    <p><code>docInfo</code> longer than 50 characters is rejected:</p>
+<pre>{"errorCode":"204","errorMessage":"Invalid document information"}</pre>
+
+    <h2 id="sign">Start signing</h2>
+    <p><code>responseSigType</code> defaults to <code>PKCS7pdf</code>. <code>signingAlgorithm</code> is <code>RSA</code> or <code>ECDSA</code>. <code>maxWaitPeriod</code> is minutes from 1 to 10080. Up to five document ids can be sent.</p>
+<pre>curl.exe -s -H "Content-Type: application/json" -d "{\"documentIds\":[\"DOCUMENT_ID\"],\"signerId\":\"demo.user@username.ESP001\",\"signingAlgorithm\":\"RSA\",\"responseSigType\":\"PKCS7pdf\",\"maxWaitPeriod\":60,\"signaturePage\":1,\"signatureX\":36,\"signatureY\":742,\"signatureWidth\":190,\"signatureHeight\":64}" http://localhost:8081/api/v1/esign/requests</pre>
+<pre>{
+  "txn": "ASP202610131413348d95b",
+  "resCode": "ESP567ba0b6dd44",
+  "status": "2",
+  "authenticationUrl": "http://localhost:8082/api/v1/esign/auth?txnref=..."
+}</pre>
+    <p><code>status</code> <code>2</code> means the ESP accepted the request and is waiting for the signer. <code>1</code> is completed. <code>0</code> is failed. If the callback is missed, poll with <code>POST /api/v1/esign/transactions/{txn}/status</code>.</p>
+    <p>The ASP builds this signed XML and posts it to the ESP. The <code>Signature</code> element is an enveloped XML-DSig. The hash is the SHA-256 of the PDF byte range, not the original file, whenever the signature type is <code>PKCS7</code>, <code>PKCS7pdf</code>, or <code>PKCS7complete</code>.</p>
+<pre>&lt;Esign ver="3.3" signerid="demo.user@username.ESP001" ts="2026-10-13T14:13:34+05:30"
+  txn="ASP202610131413348d95b" maxWaitPeriod="60" aspId="ASP001"
+  responseUrl="http://localhost:8081/api/v1/esign/callback"
+  redirectUrl="http://localhost:8081/api/v1/esign/return" signingAlgorithm="RSA"&gt;
+  &lt;Docs&gt;
+    &lt;InputHash id="1" hashAlgorithm="SHA256" docInfo="Sample agreement"
+      docUrl="http://localhost:8081/api/v1/documents/DOCUMENT_ID/prepared"
+      responseSigType="PKCS7pdf"&gt;64-hex-sha256&lt;/InputHash&gt;
+  &lt;/Docs&gt;
+&lt;/Esign&gt;</pre>
+    <p><code>raw</code> hashes the original file and does not embed a visual PDF signature. <code>docUrl</code> is then <code>/content</code>.</p>
+
+    <h2 id="place">Signature location</h2>
+    <p>Omit the five <code>signature*</code> fields to use the default: a 190 by 64 point box, 36 points from the left and the bottom of the last page. When they are set, <code>signatureX</code> and <code>signatureY</code> are the top-left of the box on the rendered page. The server converts that into PDF user space, including pages rotated 90, 180, or 270 degrees.</p>
+    <p>Page geometry before you choose a place:</p>
+<pre>GET /api/v1/documents/DOCUMENT_ID/pages
+
+[{"page":1,"width":595.0,"height":842.0,"rotation":0}]</pre>
+
+    <h2 id="files">PDF files</h2>
+    <p>After the ESP callback, <code>GET /api/v1/documents/{id}/signature</code> reports whether the CMS matches the byte-range hash:</p>
+<pre>{
+  "documentId": "DOCUMENT_ID",
+  "hashHex": "64 hex characters of the PDF byte range",
+  "responseSigType": "PKCS7pdf",
+  "signatureBase64": "CMS",
+  "verified": true,
+  "error": "",
+  "pdfError": "",
+  "signedPdf": "/api/v1/documents/DOCUMENT_ID/signed.pdf"
+}</pre>
+    <p><code>PKCS7pdf</code> and <code>PKCS7complete</code> include the CA certificate in the CMS. <code>PKCS7</code> contains only the signer certificate. There is no OCSP or CRL in this reference.</p>
+
+    <h2 id="errors">Errors</h2>
+    <p>JSON calls use the HTTP status from the catalogue. XML calls, including the ESP callback, return HTTP 200 and put the failure in the body. The full list is <a href="/api/v1/meta/error-codes">/api/v1/meta/error-codes</a>. Codes this service surfaces directly:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Code</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td>108</td><td>The sign request has no document id</td></tr>
+        <tr><td>109</td><td>More than five documents</td></tr>
+        <tr><td>204</td><td><code>docInfo</code> is missing or longer than 50 characters</td></tr>
+        <tr><td>202</td><td><code>responseSigType</code> is not raw, PKCS7, PKCS7pdf, or PKCS7complete</td></tr>
+        <tr><td>302</td><td>Status poll for an unknown transaction</td></tr>
+      </tbody>
+    </table></div>
+    <p>Uploads stay on disk under <code>data/asp</code>. A restart forgets the in-memory document index, so old ids stop resolving until you upload again.</p>
+
+    <h2 id="others">Other services</h2>
+    <ul>
+      <li><a href="http://localhost:8082/docs.html">ESP</a> authenticates the signer and returns <code>EsignResp</code>.</li>
+      <li><a href="http://localhost:8083/docs.html">eKYC</a> checks the PIN and SMS OTP. KYC attributes stay there.</li>
+      <li><a href="http://localhost:8084/docs.html">CA</a> issues the short-lived certificate and signs the hash.</li>
+    </ul>
+  </main>
+  <script src="/try.js"></script>
+  <script>
+    TryApi.mount({
+      form: document.getElementById('tester'),
+      live: document.getElementById('live'),
+      extra: document.getElementById('live-extra'),
+      operations: [
+        { label: 'GET /api/v1/meta', path: '/api/v1/meta' },
+        { label: 'GET /api/v1/meta/error-codes', path: '/api/v1/meta/error-codes' },
+        { label: 'GET /api/v1/meta/certificate', path: '/api/v1/meta/certificate' },
+        { label: 'GET /api/v1/audit', path: '/api/v1/audit' },
+        { label: 'GET /api/v1/documents', path: '/api/v1/documents' },
+        {
+          label: 'POST /api/v1/documents',
+          method: 'POST',
+          path: '/api/v1/documents',
+          body: 'multipart',
+          note: 'docInfo is 1 to 50 characters. A PDF is signed in place. Any other file is wrapped onto an A4 page.',
+          fields: [
+            { name: 'file', label: 'File', type: 'file' },
+            { name: 'docInfo', label: 'Document information', value: 'Sample agreement' }
+          ]
+        },
+        {
+          label: 'GET /api/v1/documents/{id}/pages',
+          path: '/api/v1/documents/{id}/pages',
+          fields: [{ name: 'id', label: 'Document id', in: 'path', placeholder: 'document id from the upload' }]
+        },
+        {
+          label: 'GET /api/v1/documents/{id}/preview',
+          path: '/api/v1/documents/{id}/preview',
+          fields: [
+            { name: 'id', label: 'Document id', in: 'path' },
+            { name: 'page', label: 'Page', in: 'query', value: '1' }
+          ]
+        },
+        {
+          label: 'GET /api/v1/documents/{id}/signature',
+          path: '/api/v1/documents/{id}/signature',
+          fields: [{ name: 'id', label: 'Document id', in: 'path' }]
+        },
+        {
+          label: 'GET /api/v1/documents/{id}/prepared',
+          path: '/api/v1/documents/{id}/prepared',
+          fields: [{ name: 'id', label: 'Document id', in: 'path' }]
+        },
+        {
+          label: 'GET /api/v1/documents/{id}/signed.pdf',
+          path: '/api/v1/documents/{id}/signed.pdf',
+          fields: [{ name: 'id', label: 'Document id', in: 'path' }]
+        },
+        {
+          label: 'POST /api/v1/esign/requests',
+          method: 'POST',
+          path: '/api/v1/esign/requests',
+          body: 'json',
+          note: 'Leave the signature fields empty to use the default box on the last page. This opens a real signing request on the ESP.',
+          fields: [
+            { name: 'documentIds', label: 'Document ids', value: '', placeholder: 'one id, or several separated by commas' },
+            { name: 'signerId', label: 'Signer id', value: 'demo.user@username.ESP001' },
+            { name: 'signingAlgorithm', label: 'Algorithm', type: 'select', options: ['RSA', 'ECDSA'], value: 'RSA' },
+            { name: 'responseSigType', label: 'Signature type', type: 'select', options: ['PKCS7pdf', 'PKCS7', 'PKCS7complete', 'raw'], value: 'PKCS7pdf' },
+            { name: 'maxWaitPeriod', label: 'Maximum wait (minutes)', value: '60' },
+            { name: 'signaturePage', label: 'Signature page', placeholder: 'optional, 1-based' },
+            { name: 'signatureX', label: 'Signature X (points from the left)', placeholder: 'optional' },
+            { name: 'signatureY', label: 'Signature Y (points from the top)', placeholder: 'optional' },
+            { name: 'signatureWidth', label: 'Signature width', placeholder: 'optional' },
+            { name: 'signatureHeight', label: 'Signature height', placeholder: 'optional' }
+          ],
+          build(read) {
+            const body = {
+              documentIds: read('documentIds').split(/[\s,]+/).filter(Boolean),
+              signerId: read('signerId').trim(),
+              signingAlgorithm: read('signingAlgorithm'),
+              responseSigType: read('responseSigType'),
+              maxWaitPeriod: Number(read('maxWaitPeriod'))
+            };
+            ['signaturePage', 'signatureX', 'signatureY', 'signatureWidth', 'signatureHeight'].forEach((name) => {
+              if (read(name).trim() !== '') body[name] = Number(read(name));
+            });
+            return body;
+          }
+        },
+        { label: 'GET /api/v1/esign/transactions', path: '/api/v1/esign/transactions' },
+        {
+          label: 'GET /api/v1/esign/transactions/{txn}',
+          path: '/api/v1/esign/transactions/{txn}',
+          fields: [{ name: 'txn', label: 'Transaction id', in: 'path', placeholder: 'ASP…' }]
+        },
+        {
+          label: 'POST /api/v1/esign/transactions/{txn}/status',
+          method: 'POST',
+          path: '/api/v1/esign/transactions/{txn}/status',
+          note: 'Asks the ESP for the latest EsignResp and updates the stored result.',
+          fields: [{ name: 'txn', label: 'Transaction id', in: 'path' }]
+        }
+      ]
+    });
+  </script>
+</body>
+</html>

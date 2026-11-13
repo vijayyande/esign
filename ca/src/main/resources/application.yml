@@ -1,0 +1,21 @@
+server:
+  port: 8084
+spring:
+  application:
+    name: ca
+esign:
+  data-dir: data/ca
+  keystore-password: changeit
+  certificate-validity-hours: 24
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+info:
+  app:
+    component: CA
+    spec: eSign API 3.3
+logging:
+  level:
+    com.esign: INFO

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP documentation</title>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">e</span> eSign <span>Service provider</span></a>
+    <nav class="bar-nav"><a href="/#operations">Operations</a><a href="/#logs">Logs</a><a href="/docs.html">Documentation</a><span class="spec">API 3.3</span></nav>
+  </header>
+  <main class="guide">
+    <p class="kicker">eSign service provider · port 8082</p>
+    <h1>ESP documentation</h1>
+    <p class="lead">This service checks the ASP request, authenticates the signer, calls eKYC and the CA, and returns <code>EsignResp</code>. The console at <a href="/">/</a> lists every operation and audit event held in this process.</p>
+    <nav class="toc" aria-label="On this page">
+      <a href="#try">Try the API</a>
+      <a href="#onboarding">Onboarding</a>
+      <a href="#endpoints">Endpoints</a>
+      <a href="#esign">Esign request</a>
+      <a href="#ack">Acknowledgement</a>
+      <a href="#auth">Signer authentication</a>
+      <a href="#status">Status</a>
+      <a href="#errors">Errors</a>
+      <a href="#others">Other services</a>
+    </nav>
+
+    <h2 id="try">Try the API</h2>
+    <p>Choose an operation, change the fields, and send the call to this service. The values below are only a starting point.</p>
+    <form class="card tester" id="tester">
+      <label>Operation
+        <select id="operation"></select>
+      </label>
+      <div id="fields"></div>
+      <button class="primary" type="submit">Send</button>
+    </form>
+    <pre class="live" id="live">The response appears here.</pre>
+    <div id="live-extra"></div>
+
+    <h2 id="onboarding">Onboarding an application provider</h2>
+    <p>The console page <a href="/#applications">Applications</a> registers an ASP. A signed <code>Esign</code> request is accepted only when that <code>aspId</code> is onboarded and the certificate inside the XML signature is the registered one. An unknown ASP is error 106. A different certificate is error 104. Status requests use 301 for both.</p>
+    <p>The reference ASP publishes its signing certificate at <code>http://localhost:8081/api/v1/meta/certificate</code>. Paste that PEM, or ask this ESP to fetch it:</p>
+<pre>{
+  "aspId": "ASP001",
+  "name": "Reference application",
+  "certificateUrl": "http://localhost:8081/api/v1/meta/certificate"
+}</pre>
+
+    <h2 id="endpoints">Endpoints</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/</code></td><td>Operator console: overview, operations, logs, applications, service</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/asps</code></td><td>Onboarded ASPs, subjects, and fingerprints</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/asps</code></td><td>Register or replace an ASP from a PEM certificate</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/asps/fetch</code></td><td>Register or replace an ASP by fetching its certificate URL</td></tr>
+        <tr><td>DELETE</td><td><code>/api/v1/asps/{aspId}</code></td><td>Remove an onboarded ASP</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/esign</code></td><td>Signed <code>Esign</code> XML. Ack is <code>EsignResp</code> status 2</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/esign/status</code></td><td>Signed <code>EsignStatus</code>. Same response shape, including a pending request</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/esign/auth?txnref=</code></td><td>Signer page. <code>txnref</code> is Base64 of <code>txn|resCode</code></td></tr>
+        <tr><td>POST</td><td><code>/api/v1/esign/auth</code></td><td>Form: <code>txnref</code>, <code>signerId</code>, <code>pin</code>, <code>otp</code>, and one <code>doc</code> per document to sign</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/esign/auth/otp</code></td><td>JSON <code>txnref</code> and <code>signerId</code>. Demo mode adds <code>demoOtp</code></td></tr>
+        <tr><td>GET</td><td><code>/api/v1/esign/transactions</code></td><td>Operations, newest first</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/esign/transactions/{txn}</code></td><td>One operation, including document hashes and the authentication URL</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta</code></td><td>Component name</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta/service</code></td><td>ESP id, onboarded ASP ids, and downstream URLs</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta/certificate</code></td><td>PEM of the ESP XML signing certificate</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta/error-codes</code></td><td>Section 5 catalogue</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/audit</code></td><td>Newest 300 audit events</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="esign">Esign request</h2>
+    <p>The body is <code>application/xml</code>. It must carry an enveloped XML signature. Verification uses the certificate inside that signature. A missing signature is error <code>107</code>. A signature that does not validate is <code>104</code>. Both still use HTTP 200.</p>
+<pre>&lt;Esign ver="3.3" signerid="demo.user@username.ESP001" ts="2026-10-13T14:13:34+05:30"
+  txn="ASP202610131413348d95b" maxWaitPeriod="60" aspId="ASP001"
+  responseUrl="http://localhost:8081/api/v1/esign/callback"
+  redirectUrl="http://localhost:8081/api/v1/esign/return" signingAlgorithm="RSA"&gt;
+  &lt;Docs&gt;
+    &lt;InputHash id="1" hashAlgorithm="SHA256" docInfo="Sample agreement"
+      docUrl="http://localhost:8081/api/v1/documents/DOCUMENT_ID/prepared"
+      responseSigType="PKCS7pdf"&gt;b1333fa4a04f9597efc940d478a183573d0c8196b2c33e37fdce7872a831aa54&lt;/InputHash&gt;
+  &lt;/Docs&gt;
+&lt;/Esign&gt;</pre>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Check</th><th>Rule</th></tr></thead>
+      <tbody>
+        <tr><td><code>ver</code></td><td><code>3.3</code>, or error 103</td></tr>
+        <tr><td><code>ts</code></td><td>ISO-8601 offset within 30 minutes, or error 110</td></tr>
+        <tr><td><code>txn</code></td><td>1–50 characters from <code>A-Za-z0-9._:-</code>, unique per ASP for the IST day after acceptance (112)</td></tr>
+        <tr><td><code>aspId</code></td><td>Must be onboarded, and the signing certificate must match that registration (106 or 104)</td></tr>
+        <tr><td><code>signerid</code></td><td><code>id@username|Mobile|PAN.ESP001</code> (102)</td></tr>
+        <tr><td><code>maxWaitPeriod</code></td><td>1–10080 minutes (111). Spec default is 1440</td></tr>
+        <tr><td>Documents</td><td>1 to 5. Hash is 64 hex characters, algorithm <code>SHA256</code>, <code>docUrl</code> is http or https, <code>docInfo</code> is 1–50 characters</td></tr>
+      </tbody>
+    </table></div>
+    <p>The usual client is the <a href="http://localhost:8081/">ASP</a>. Posting the XML above without a signature shows the HTTP 200 error form:</p>
+<pre>curl.exe -s -H "Content-Type: application/xml" -d "&lt;Esign ver=&quot;3.3&quot;/&gt;" http://localhost:8082/api/v1/esign</pre>
+
+    <h2 id="ack">Acknowledgement</h2>
+    <p>A valid request is stored and answered before the signer authenticates. <code>resCode</code> is required later inside <code>txnref</code>.</p>
+<pre>&lt;EsignResp ver="3.3" status="2" ts="2026-10-13T14:13:34+05:30"
+  txn="ASP202610131413348d95b" resCode="ESP567ba0b6dd44"/&gt;</pre>
+    <p>After PIN and OTP succeed, the ESP signs this response, posts it to <code>responseUrl</code>, and form-posts <code>txnref</code> to <code>redirectUrl</code>.</p>
+<pre>&lt;EsignResp ver="3.3" status="1" ts="2026-10-13T14:20:10+05:30"
+  txn="ASP202610131413348d95b" resCode="ESP567ba0b6dd44"&gt;
+  &lt;UserX509Certificate&gt;base64 DER of the short-lived signer certificate&lt;/UserX509Certificate&gt;
+  &lt;Signatures&gt;
+    &lt;DocSignature id="1" sigHashAlgorithm="SHA256" error=""&gt;base64 CMS or raw signature&lt;/DocSignature&gt;
+  &lt;/Signatures&gt;
+&lt;/EsignResp&gt;</pre>
+    <p>Unchecking a document on the signer page cancels only that document. Its <code>DocSignature</code> carries error <code>206</code>.</p>
+
+    <h2 id="auth">Signer authentication</h2>
+    <p>Ask for a one-time password after you have a <code>txnref</code> from an accepted request. Demo mode returns the digits because no SMS gateway is connected. The value sent onward to eKYC is the SHA-256 hex of those digits, not the digits themselves. The PIN on the wire is <code>SHA-256(txn + SHA-256(pin))</code>.</p>
+<pre>curl.exe -s -H "Content-Type: application/json" -d "{\"txnref\":\"BASE64_TXN_PIPE_RESCODE\",\"signerId\":\"demo.user@username.ESP001\"}" http://localhost:8082/api/v1/esign/auth/otp</pre>
+<pre>{"sent":true,"demoOtp":"048213"}</pre>
+    <p>Only <code>SMSOTP</code> is enabled. The signer page posts the form to <code>/api/v1/esign/auth</code>. Consent text, when eKYC requires it, is exactly <code>I hereby authorize this KYC Information authentication.</code></p>
+    <p>Five failed attempts lock that signer for that transaction. A scheduler every 30 seconds completes a request past <code>maxWaitPeriod</code> with error <code>113</code>. Transactions stay in memory until restart. A production ESP keeps them for at least 30 days.</p>
+    <p>Read one operation, including its authentication URL:</p>
+<pre>GET /api/v1/esign/transactions/ASP202610131413348d95b</pre>
+
+    <h2 id="status">Status</h2>
+    <p>The ASP sends this signed XML when it polls. A bad timestamp, ASP id, or signature on a status request is reported as <code>301</code>. An unknown transaction is <code>302</code>.</p>
+<pre>&lt;EsignStatus ver="3.3" ts="2026-10-13T14:25:00+05:30"
+  txn="ASP202610131413348d95b" aspId="ASP001"/&gt;</pre>
+    <p>The response is an <code>EsignResp</code>. Status <code>2</code> is still waiting, <code>1</code> includes signatures, and <code>0</code> carries <code>error</code>.</p>
+
+    <h2 id="errors">Errors</h2>
+    <p>XML APIs return HTTP 200. The code is the <code>error</code> attribute. JSON APIs, such as a bad OTP request, use the catalogue HTTP status:</p>
+<pre>{"errorCode":"114","errorMessage":"Authentication failed. User credentials invalid."}</pre>
+    <p>Audit actions include <code>ESIGN_ACCEPTED</code>, <code>ESIGN_REJECTED</code>, <code>OTP_REQUESTED</code>, <code>ESIGN_COMPLETED</code>, <code>ESIGN_FAILED</code>, <code>CALLBACK</code>, <code>CALLBACK_FAILED</code>, <code>STATUS_READ</code>, and <code>STATUS_REJECTED</code>. The same list is on <a href="/#logs">Logs</a>. Every code is at <a href="/api/v1/meta/error-codes">/api/v1/meta/error-codes</a>.</p>
+
+    <h2 id="others">Other services</h2>
+    <ul>
+      <li><a href="http://localhost:8081/docs.html">ASP</a> builds the PDF and sends the signed <code>Esign</code> request.</li>
+      <li><a href="http://localhost:8083/docs.html">eKYC</a> checks the PIN and OTP. The ASP never receives the KYC attributes.</li>
+      <li><a href="http://localhost:8084/docs.html">CA</a> issues the certificate and signs each document hash.</li>
+    </ul>
+  </main>
+  <script src="/try.js"></script>
+  <script>
+    TryApi.mount({
+      form: document.getElementById('tester'),
+      live: document.getElementById('live'),
+      extra: document.getElementById('live-extra'),
+      operations: [
+        { label: 'GET /api/v1/asps', path: '/api/v1/asps' },
+        {
+          label: 'POST /api/v1/asps/fetch',
+          method: 'POST',
+          path: '/api/v1/asps/fetch',
+          body: 'json',
+          note: 'The ESP downloads the PEM and stores it for this ASP id.',
+          fields: [
+            { name: 'aspId', label: 'ASP id', value: 'ASP001' },
+            { name: 'name', label: 'Name', value: 'Reference application' },
+            { name: 'certificateUrl', label: 'Certificate URL', value: 'http://localhost:8081/api/v1/meta/certificate' }
+          ],
+          build(read) {
+            return { aspId: read('aspId').trim(), name: read('name').trim(), certificateUrl: read('certificateUrl').trim() };
+          }
+        },
+        {
+          label: 'POST /api/v1/asps',
+          method: 'POST',
+          path: '/api/v1/asps',
+          body: 'json',
+          fields: [
+            { name: 'aspId', label: 'ASP id', value: 'ASP001' },
+            { name: 'name', label: 'Name', value: 'Reference application' },
+            { name: 'certificatePem', label: 'Certificate PEM', type: 'textarea', placeholder: '-----BEGIN CERTIFICATE-----' }
+          ],
+          build(read) {
+            return { aspId: read('aspId').trim(), name: read('name').trim(), certificatePem: read('certificatePem') };
+          }
+        },
+        {
+          label: 'DELETE /api/v1/asps/{aspId}',
+          method: 'DELETE',
+          path: '/api/v1/asps/{aspId}',
+          fields: [{ name: 'aspId', label: 'ASP id', in: 'path', value: 'ASP001' }]
+        },
+        { label: 'GET /api/v1/meta/service', path: '/api/v1/meta/service' },
+        { label: 'GET /api/v1/meta', path: '/api/v1/meta' },
+        { label: 'GET /api/v1/meta/error-codes', path: '/api/v1/meta/error-codes' },
+        { label: 'GET /api/v1/meta/certificate', path: '/api/v1/meta/certificate' },
+        { label: 'GET /api/v1/audit', path: '/api/v1/audit' },
+        { label: 'GET /api/v1/esign/transactions', path: '/api/v1/esign/transactions' },
+        {
+          label: 'GET /api/v1/esign/transactions/{txn}',
+          path: '/api/v1/esign/transactions/{txn}',
+          fields: [{ name: 'txn', label: 'Transaction id', in: 'path', placeholder: 'ASP…' }]
+        },
+        {
+          label: 'POST /api/v1/esign/auth/otp',
+          method: 'POST',
+          path: '/api/v1/esign/auth/otp',
+          body: 'json',
+          note: 'txnref is Base64 of txn|resCode from an accepted request. Demo mode returns the OTP digits.',
+          fields: [
+            { name: 'txnref', label: 'txnref', placeholder: 'Base64 of txn|resCode' },
+            { name: 'signerId', label: 'Signer id', value: 'demo.user@username.ESP001' }
+          ],
+          build(read) {
+            return { txnref: read('txnref').trim(), signerId: read('signerId').trim() };
+          }
+        },
+        {
+          label: 'POST /api/v1/esign/auth',
+          method: 'POST',
+          path: '/api/v1/esign/auth',
+          body: 'form',
+          note: 'Separate document ids with commas. Each one is sent as a doc field. Unlisted documents are cancelled.',
+          fields: [
+            { name: 'txnref', label: 'txnref' },
+            { name: 'signerId', label: 'Signer id', value: 'demo.user@username.ESP001' },
+            { name: 'pin', label: 'PIN', value: '123456' },
+            { name: 'otp', label: 'One-time password', placeholder: 'six digits' },
+            { name: 'doc', label: 'Document ids to sign', repeat: true, placeholder: '1 or 1,2' }
+          ]
+        },
+        {
+          label: 'POST /api/v1/esign',
+          method: 'POST',
+          path: '/api/v1/esign',
+          body: 'text',
+          contentType: 'application/xml',
+          note: 'The XML must carry an enveloped signature. Without one, the response is HTTP 200 with error 107.',
+          fields: [{
+            name: 'body',
+            label: 'Esign XML',
+            type: 'textarea',
+            value: '<Esign ver="3.3" signerid="demo.user@username.ESP001" ts="2026-10-13T14:13:34+05:30" txn="ASP-MANUAL-1" maxWaitPeriod="60" aspId="ASP001" responseUrl="http://localhost:8081/api/v1/esign/callback" redirectUrl="http://localhost:8081/api/v1/esign/return" signingAlgorithm="RSA"><Docs><InputHash id="1" hashAlgorithm="SHA256" docInfo="Sample agreement" docUrl="http://localhost:8081/api/v1/documents/1/prepared" responseSigType="PKCS7pdf">aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</InputHash></Docs></Esign>'
+          }]
+        },
+        {
+          label: 'POST /api/v1/esign/status',
+          method: 'POST',
+          path: '/api/v1/esign/status',
+          body: 'text',
+          contentType: 'application/xml',
+          note: 'A status request also needs an enveloped signature. A missing signature is reported as 301.',
+          fields: [{
+            name: 'body',
+            label: 'EsignStatus XML',
+            type: 'textarea',
+            value: '<EsignStatus ver="3.3" ts="2026-10-13T14:25:00+05:30" txn="ASP-MANUAL-1" aspId="ASP001"/>'
+          }]
+        }
+      ]
+    });
+  </script>
+</body>
+</html>

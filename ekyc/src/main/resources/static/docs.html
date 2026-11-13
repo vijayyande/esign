@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eKYC documentation</title>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">e</span> eSign <span>eKYC provider</span></a>
+    <nav class="bar-nav"><a href="/docs.html">Documentation</a><span class="spec">API 3.3</span></nav>
+  </header>
+  <main class="guide">
+    <p class="kicker">eKYC provider · port 8083</p>
+    <h1>eKYC documentation</h1>
+    <p class="lead">This service authenticates a signer and holds the KYC attributes. A successful <code>eKycResp</code> is returned only to the ESP. The ASP does not receive it.</p>
+    <nav class="toc" aria-label="On this page">
+      <a href="#try">Try the API</a>
+      <a href="#endpoints">Endpoints</a>
+      <a href="#otp">One-time password</a>
+      <a href="#ekyc">eKYC request</a>
+      <a href="#subscriber">Subscriber</a>
+      <a href="#bank">Bank KYC</a>
+      <a href="#org">Organisation KYC</a>
+      <a href="#errors">Errors</a>
+      <a href="#others">Other services</a>
+    </nav>
+
+    <h2 id="try">Try the API</h2>
+    <p>Choose an operation, change the fields, and send the call to this service. The values below are only a starting point.</p>
+    <form class="card tester" id="tester">
+      <label>Operation
+        <select id="operation"></select>
+      </label>
+      <div id="fields"></div>
+      <button class="primary" type="submit">Send</button>
+    </form>
+    <pre class="live" id="live">The response appears here.</pre>
+    <div id="live-extra"></div>
+
+    <h2 id="endpoints">Endpoints</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/api/v1/otp</code></td><td>Issue a 6-digit OTP for a signer and transaction. Expires in 5 minutes</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/ekyc</code></td><td>Signed <code>eKycReq</code>. Success stays on this service</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/bank-kyc</code></td><td>Signed <code>BankKYC</code> version 1.0</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/org-kyc</code></td><td>Signed <code>OrgKYC</code> version 1.0</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/accounts</code></td><td>Enrol a signer</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/subscriber/login</code></td><td>PIN login. Returns a bearer token for 30 minutes</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/subscriber/profile</code></td><td>Profile for the bearer token</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/subscriber/profile</code></td><td>Update email, address, state, or postal code</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/subscriber/pin</code></td><td>Change PIN. Body <code>currentPin</code> and <code>newPin</code></td></tr>
+        <tr><td>GET</td><td><code>/api/v1/subscriber/history</code></td><td>Signing history for the logged-in signer</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta</code></td><td>Component name</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta/certificate</code></td><td>PEM of the eKYC XML signing certificate</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta/error-codes</code></td><td>Section 5 catalogue</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/audit</code></td><td>Recent audit events</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="otp">One-time password</h2>
+<pre>curl.exe -s -H "Content-Type: application/json" -d "{\"signerId\":\"demo.user@username.ESP001\",\"txn\":\"KYC001\"}" http://localhost:8083/api/v1/otp</pre>
+<pre>{"sent":true,"demoOtp":"048213"}</pre>
+    <p>The ESP does not send those digits to this service. The second-factor value is lowercase hex <code>SHA-256</code> of the six digits. Turn <code>esign.expose-demo-otp</code> off before any shared deployment. <code>esign.seed-demo-user</code> creates the demo signer on startup.</p>
+    <p>An unknown signer id shape is <code>102</code>. A well-formed id that is not enrolled is <code>114</code>.</p>
+
+    <h2 id="ekyc">eKYC request</h2>
+    <p>The ESP signs this XML. <code>pinhash</code> is lowercase hex <code>SHA-256(txn + SHA-256(pin))</code>. For PIN <code>123456</code>, the inner hash is <code>8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92</code>. <code>SecondFactor</code> is the Base64 of a <code>SecondFactorRequest</code>. Omit it and the response status is <code>2</code>, meaning the PIN was accepted and the second factor is still required.</p>
+<pre>&lt;eKycReq ver="3.3" signerid="demo.user@username.ESP001" ts="2026-10-13T14:20:00+05:30"
+  txn="KYC001" pinhash="64-hex-sha256-of-txn-plus-pin-hash"&gt;
+  &lt;SecondFactor&gt;base64 of the SecondFactorRequest below&lt;/SecondFactor&gt;
+&lt;/eKycReq&gt;</pre>
+<pre>&lt;SecondFactorRequest ver="1.0" signerid="demo.user@username.ESP001" ts="2026-10-13T14:20:00+05:30"
+  txn="KYC001" authenticationType="SMSOTP"
+  consent="I hereby authorize this KYC Information authentication."&gt;
+  &lt;SMSOTP&gt;lowercase hex SHA-256 of the six-digit OTP&lt;/SMSOTP&gt;
+&lt;/SecondFactorRequest&gt;</pre>
+    <p>The consent sentence must match exactly. <code>authenticationType</code> must be <code>SMSOTP</code>. TOTP, mobile access tokens, FIDO, and public-key authentication are rejected. Five failed attempts lock that signer for that transaction. A completed transaction is not replayed.</p>
+    <p>A success response is signed and includes the KYC attributes. Status <code>1</code> is success, <code>0</code> is failure, and <code>2</code> is waiting for the second factor. XML still returns HTTP 200.</p>
+<pre>&lt;eKycResp ver="3.3" status="1" signerid="demo.user@username.ESP001" ts="2026-10-13T14:20:01+05:30"
+  txn="KYC001" respCode="KYC..."&gt;
+  &lt;kycData name="Demo Signer" mobile="9876543210" email="demo@example.com" address="1 MG Road"
+    stateProvince="KA" country="IN" postalCode="560001" PAN="ABCDE1234F" DOB="1990-01-15"
+    Gender="M" Aadhaar="1234" eKYCtype="OFFLINE_AADHAAR"/&gt;
+  &lt;Photo&gt;base64 PNG&lt;/Photo&gt;
+&lt;/eKycResp&gt;</pre>
+    <p>Signer id forms are <code>name@username.ESP001</code>, a 10-digit <code>mobile@Mobile.ESP001</code>, or <code>PAN@PAN.ESP001</code>. The demo account also matches <code>9876543210@Mobile.ESP001</code> and <code>ABCDE1234F@PAN.ESP001</code>.</p>
+
+    <h2 id="subscriber">Subscriber</h2>
+<pre>curl.exe -s -H "Content-Type: application/json" -d "{\"signerId\":\"demo.user@username.ESP001\",\"pin\":\"123456\"}" http://localhost:8083/api/v1/subscriber/login</pre>
+<pre>{"token":"uuid","signerId":"demo.user@username.ESP001"}</pre>
+<pre>curl.exe -s -H "Authorization: Bearer TOKEN" http://localhost:8083/api/v1/subscriber/profile</pre>
+    <p>Profile update accepts any of <code>email</code>, <code>address</code>, <code>stateProvince</code>, and <code>postalCode</code>. A new PIN must be at least 6 characters. A missing or expired bearer token is <code>114</code>.</p>
+    <p>Enrolment is <code>POST /api/v1/accounts</code>. The demo id already exists, so this example uses a new id. Personal accounts cannot share a mobile or PAN. <code>ekycType</code> is <code>OFFLINE_AADHAAR</code>, <code>BANK</code>, <code>ORGANISATIONAL</code>, or <code>FOREIGN_NATIONAL</code>. A foreign national must not use country <code>IN</code>. Bank enrolment requires a stored Bank KYC transaction. Organisation enrolment requires the organisation id, name, signatory name, and certificate id.</p>
+<pre>{
+  "signerId": "new.user@username.ESP001",
+  "pin": "123456",
+  "name": "New Signer",
+  "mobile": "9123456780",
+  "email": "new@example.com",
+  "address": "1 MG Road",
+  "stateProvince": "KA",
+  "country": "IN",
+  "postalCode": "560001",
+  "pan": "PQRST1234Z",
+  "dob": "1992-04-02",
+  "gender": "F",
+  "aadhaarLastFour": "5678",
+  "ekycType": "OFFLINE_AADHAAR",
+  "photoBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+}</pre>
+
+    <h2 id="bank">Bank KYC</h2>
+    <p>Version is <code>1.0</code>. The body must be signed. A malformed body is <code>401</code> rather than a signature error, because the signature is checked after the XML parses. IFSC is optional. When present it must be 11 letters or digits, otherwise <code>406</code>. Gender is mandatory. An account number that is not 6–18 digits is <code>401</code>. A missing photo is <code>420</code>. Photo format is <code>BMP</code>, <code>JPG</code>, or <code>PNG</code>.</p>
+<pre>&lt;BankKYC ver="1.0" ts="2026-10-13T14:20:00+05:30" txn="BANK20261013001"
+  bankName="Demo Bank" accountNumber="123456789012"&gt;
+  &lt;KYCInfo name="New Signer" mobile="9123456780" email="new@example.com" address="1 MG Road"
+    stateProvince="KA" country="IN" postalCode="560001" dateOfBirth="1992-04-02" gender="F"
+    pan="PQRST1234Z" Aadhaar="5678"/&gt;
+  &lt;Photo format="PNG"&gt;iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==&lt;/Photo&gt;
+&lt;/BankKYC&gt;</pre>
+<pre>&lt;BankKYCResp ver="1.0" ts="2026-10-13T14:20:01+05:30" txn="BANK20261013001" status="1" resCode="BANK..."/&gt;</pre>
+    <p>A failure uses the same element with <code>status="0"</code>, <code>error</code>, <code>errorCode</code>, and <code>errorMessage</code>.</p>
+
+    <h2 id="org">Organisation KYC</h2>
+    <p>API 3.3 removed the old organisational option-1 request and kept error codes 501–521. <code>OrgKYC</code> is the payload this project validates against that list. <code>physicalVerification</code> must contain the person's name. Either PAN or the last four digits of Aadhaar is required.</p>
+<pre>&lt;OrgKYC ver="1.0" ts="2026-10-13T14:20:00+05:30" txn="ORG20261013001"
+  kycOrgId="ORG001" orgName="Demo Org" orgUnit="Finance" orgSigName="Authorised Signatory"
+  orgSigCertId="CERT001" employeeId="E100" physicalVerification="New Signer"&gt;
+  &lt;KYCInfo name="New Signer" mobile="9123456780" address="1 MG Road" stateProvince="KA"
+    country="IN" postalCode="560001" dateOfBirth="1992-04-02" gender="F" pan="PQRST1234Z"/&gt;
+  &lt;Photo format="PNG"&gt;iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==&lt;/Photo&gt;
+&lt;/OrgKYC&gt;</pre>
+<pre>&lt;OrgKYCResp ver="1.0" ts="2026-10-13T14:20:01+05:30" txn="ORG20261013001" status="1" resCode="ORG..."/&gt;</pre>
+
+    <h2 id="errors">Errors</h2>
+    <p>JSON uses the HTTP status from the catalogue. XML returns HTTP 200 with the code in the body. The full list is <a href="/api/v1/meta/error-codes">/api/v1/meta/error-codes</a>.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Range</th><th>Used for</th></tr></thead>
+      <tbody>
+        <tr><td>101–114</td><td>eKYC authentication: format, signer id, version, signature, timestamp, and PIN or OTP failure (114)</td></tr>
+        <tr><td>401–420, 499</td><td>Bank KYC</td></tr>
+        <tr><td>501–521, 599</td><td>Organisation KYC. A bad PAN, or missing both PAN and Aadhaar, is 517</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="others">Other services</h2>
+    <ul>
+      <li><a href="http://localhost:8082/docs.html">ESP</a> calls <code>/api/v1/otp</code> and <code>/api/v1/ekyc</code> during signing.</li>
+      <li><a href="http://localhost:8081/docs.html">ASP</a> never calls this service directly.</li>
+      <li><a href="http://localhost:8084/docs.html">CA</a> signs the document hash after eKYC succeeds.</li>
+    </ul>
+  </main>
+  <script src="/try.js"></script>
+  <script>
+    const bearer = { name: 'Authorization', label: 'Authorization', in: 'header', placeholder: 'Bearer token from login' };
+    TryApi.mount({
+      form: document.getElementById('tester'),
+      live: document.getElementById('live'),
+      extra: document.getElementById('live-extra'),
+      operations: [
+        { label: 'GET /api/v1/meta', path: '/api/v1/meta' },
+        { label: 'GET /api/v1/meta/error-codes', path: '/api/v1/meta/error-codes' },
+        { label: 'GET /api/v1/meta/certificate', path: '/api/v1/meta/certificate' },
+        { label: 'GET /api/v1/audit', path: '/api/v1/audit' },
+        {
+          label: 'POST /api/v1/otp',
+          method: 'POST',
+          path: '/api/v1/otp',
+          body: 'json',
+          note: 'Demo mode includes the six digits in the response. Use a new transaction id for each OTP.',
+          fields: [
+            { name: 'signerId', label: 'Signer id', value: 'demo.user@username.ESP001' },
+            { name: 'txn', label: 'Transaction id', value: 'KYC001' }
+          ],
+          build(read) {
+            return { signerId: read('signerId').trim(), txn: read('txn').trim() };
+          }
+        },
+        {
+          label: 'POST /api/v1/subscriber/login',
+          method: 'POST',
+          path: '/api/v1/subscriber/login',
+          body: 'json',
+          fields: [
+            { name: 'signerId', label: 'Signer id', value: 'demo.user@username.ESP001' },
+            { name: 'pin', label: 'PIN', value: '123456' }
+          ],
+          build(read) {
+            return { signerId: read('signerId').trim(), pin: read('pin') };
+          }
+        },
+        {
+          label: 'GET /api/v1/subscriber/profile',
+          path: '/api/v1/subscriber/profile',
+          fields: [bearer]
+        },
+        {
+          label: 'GET /api/v1/subscriber/history',
+          path: '/api/v1/subscriber/history',
+          fields: [bearer]
+        },
+        {
+          label: 'POST /api/v1/subscriber/profile',
+          method: 'POST',
+          path: '/api/v1/subscriber/profile',
+          body: 'json',
+          note: 'Send only the fields you want to change. Leave the others empty.',
+          fields: [
+            bearer,
+            { name: 'email', label: 'Email', placeholder: 'optional' },
+            { name: 'address', label: 'Address', placeholder: 'optional' },
+            { name: 'stateProvince', label: 'State', placeholder: 'optional' },
+            { name: 'postalCode', label: 'Postal code', placeholder: 'optional' }
+          ],
+          build(read) {
+            const body = {};
+            ['email', 'address', 'stateProvince', 'postalCode'].forEach((name) => {
+              if (read(name).trim()) body[name] = read(name).trim();
+            });
+            return body;
+          }
+        },
+        {
+          label: 'POST /api/v1/subscriber/pin',
+          method: 'POST',
+          path: '/api/v1/subscriber/pin',
+          body: 'json',
+          note: 'A new PIN must be at least 6 characters. This changes the demo signer if you use that token.',
+          fields: [
+            bearer,
+            { name: 'currentPin', label: 'Current PIN', value: '123456' },
+            { name: 'newPin', label: 'New PIN' }
+          ],
+          build(read) {
+            return { currentPin: read('currentPin'), newPin: read('newPin') };
+          }
+        },
+        {
+          label: 'POST /api/v1/accounts',
+          method: 'POST',
+          path: '/api/v1/accounts',
+          body: 'json',
+          note: 'Edit the JSON before sending. The demo signer id already exists, so use a new signer id, mobile, and PAN.',
+          fields: [{
+            name: 'body',
+            label: 'Enrolment JSON',
+            type: 'textarea',
+            value: '{\n  "signerId": "new.user@username.ESP001",\n  "pin": "123456",\n  "name": "New Signer",\n  "mobile": "9123456780",\n  "email": "new@example.com",\n  "address": "1 MG Road",\n  "stateProvince": "KA",\n  "country": "IN",\n  "postalCode": "560001",\n  "pan": "PQRST1234Z",\n  "dob": "1992-04-02",\n  "gender": "F",\n  "aadhaarLastFour": "5678",\n  "ekycType": "OFFLINE_AADHAAR",\n  "photoBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="\n}'
+          }],
+          build(read) {
+            try {
+              return JSON.parse(read('body'));
+            } catch (error) {
+              throw new Error('Enrolment JSON is not valid.');
+            }
+          }
+        },
+        {
+          label: 'POST /api/v1/ekyc',
+          method: 'POST',
+          path: '/api/v1/ekyc',
+          body: 'text',
+          contentType: 'application/xml',
+          note: 'The request must be signed. pinhash is SHA-256 of the transaction id plus SHA-256 of the PIN. SecondFactor is Base64 of a SecondFactorRequest.',
+          fields: [{
+            name: 'body',
+            label: 'eKycReq XML',
+            type: 'textarea',
+            value: '<eKycReq ver="3.3" signerid="demo.user@username.ESP001" ts="2026-10-13T14:20:00+05:30" txn="KYC001" pinhash="replace-with-64-hex-characters"></eKycReq>'
+          }]
+        },
+        {
+          label: 'POST /api/v1/bank-kyc',
+          method: 'POST',
+          path: '/api/v1/bank-kyc',
+          body: 'text',
+          contentType: 'application/xml',
+          note: 'The request must be signed. A malformed body is error 401.',
+          fields: [{
+            name: 'body',
+            label: 'BankKYC XML',
+            type: 'textarea',
+            value: '<BankKYC ver="1.0" ts="2026-10-13T14:20:00+05:30" txn="BANK001" bankName="Demo Bank" accountNumber="123456789012"><KYCInfo name="New Signer" mobile="9123456780" email="new@example.com" address="1 MG Road" stateProvince="KA" country="IN" postalCode="560001" dateOfBirth="1992-04-02" gender="F" pan="PQRST1234Z" Aadhaar="5678"/><Photo format="PNG">iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==</Photo></BankKYC>'
+          }]
+        },
+        {
+          label: 'POST /api/v1/org-kyc',
+          method: 'POST',
+          path: '/api/v1/org-kyc',
+          body: 'text',
+          contentType: 'application/xml',
+          note: 'The request must be signed. physicalVerification must contain the person name.',
+          fields: [{
+            name: 'body',
+            label: 'OrgKYC XML',
+            type: 'textarea',
+            value: '<OrgKYC ver="1.0" ts="2026-10-13T14:20:00+05:30" txn="ORG001" kycOrgId="ORG001" orgName="Demo Org" orgUnit="Finance" orgSigName="Authorised Signatory" orgSigCertId="CERT001" employeeId="E100" physicalVerification="New Signer"><KYCInfo name="New Signer" mobile="9123456780" address="1 MG Road" stateProvince="KA" country="IN" postalCode="560001" dateOfBirth="1992-04-02" gender="F" pan="PQRST1234Z"/><Photo format="PNG">iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==</Photo></OrgKYC>'
+          }]
+        }
+      ]
+    });
+  </script>
+</body>
+</html>

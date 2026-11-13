@@ -1,0 +1,25 @@
+server:
+  port: 8082
+spring:
+  application:
+    name: esp
+esign:
+  esp-id: ESP001
+  data-dir: data/esp
+  allowed-asp-ids:
+    - ASP001
+  ekyc-url: http://localhost:8083/api/v1/ekyc
+  otp-url: http://localhost:8083/api/v1/otp
+  ca-url: http://localhost:8084/api/v1/certificates
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+info:
+  app:
+    component: ESP
+    spec: eSign API 3.3
+logging:
+  level:
+    com.esign: INFO

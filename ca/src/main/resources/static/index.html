@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Certifying authority</title>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">e</span> eSign <span>Certifying authority</span></a>
+    <nav class="bar-nav"><a href="/docs.html">Documentation</a><span class="spec">API 3.3</span></nav>
+  </header>
+  <main class="layout">
+    <section>
+      <p class="kicker">Certificates · port 8084</p>
+      <h1>Certifying authority</h1>
+      <p class="lead">Issues a short-lived end-entity certificate and signs the document hashes supplied by the ESP. The end-entity private key is discarded after the response.</p>
+      <p><a class="button primary" href="/docs.html">Documentation and examples</a></p>
+    </section>
+    <section class="card">
+      <h2>This reference CA</h2>
+      <dl class="facts">
+        <div><dt>Subject</dt><dd>CN=eSign Reference CA</dd></div>
+        <div><dt>Key</dt><dd>RSA 2048, self-signed</dd></div>
+        <div><dt>Signer certificate</dt><dd>24 hours, digitalSignature only</dd></div>
+        <div><dt>Keystore</dt><dd>data/ca/ca.p12, password changeit</dd></div>
+      </dl>
+      <p class="hint">This is not a licensed certifying authority and it does not publish OCSP or CRL.</p>
+    </section>
+  </main>
+</body>
+</html>

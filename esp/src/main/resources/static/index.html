@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP console</title>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body class="console">
+  <header class="bar">
+    <a class="brand" href="#overview"><span class="mark" aria-hidden="true">e</span> eSign <span>Service provider</span></a>
+    <nav class="bar-nav"><a href="/docs.html">Documentation</a><span class="spec">API 3.3</span></nav>
+  </header>
+  <div class="shell">
+    <nav class="side" aria-label="Console">
+      <a href="#overview" data-page="overview">Overview</a>
+      <a href="#operations" data-page="operations">Operations</a>
+      <a href="#logs" data-page="logs">Logs</a>
+      <a href="#applications" data-page="applications">Applications</a>
+      <a href="#service" data-page="service">Service</a>
+      <a href="/docs.html">Documentation</a>
+    </nav>
+    <div class="workspace" id="view"></div>
+  </div>
+  <script>
+    const view = document.getElementById('view');
+    const statusName = { '0': 'Failed', '1': 'Completed', '2': 'Waiting' };
+    const statusClass = { '0': 'bad', '1': 'ok', '2': 'wait' };
+
+    const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+
+    const badge = (status) => `<span class="badge ${statusClass[status] || 'wait'}">${esc(statusName[status] || status || 'Unknown')}</span>`;
+
+    async function get(url) {
+      const response = await fetch(url);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.errorMessage || `Request failed (${response.status})`);
+      }
+      return response.json();
+    }
+
+    function route() {
+      const hash = location.hash.replace(/^#/, '') || 'overview';
+      const [page, id] = hash.split('/');
+      document.querySelectorAll('.side a').forEach((link) => {
+        link.classList.toggle('active', link.dataset.page === (page === 'operation' ? 'operations' : page));
+      });
+      if (page === 'operations') return operations();
+      if (page === 'operation' && id) return operation(decodeURIComponent(id));
+      if (page === 'logs') return logs();
+      if (page === 'applications') return applications();
+      if (page === 'service') return service();
+      return overview();
+    }
+
+    async function overview() {
+      const [transactions, logs] = await Promise.all([
+        get('/api/v1/esign/transactions'),
+        get('/api/v1/audit')
+      ]);
+      const count = (status) => transactions.filter((item) => item.status === status).length;
+      view.innerHTML = `
+        <p class="kicker">Console</p>
+        <h1>Overview</h1>
+        <p class="lead">Signing requests held in this process, and the latest audit events.</p>
+        <div class="stats">
+          <div class="stat"><b>${transactions.length}</b><span>Operations</span></div>
+          <div class="stat"><b>${count('2')}</b><span>Waiting</span></div>
+          <div class="stat"><b>${count('1')}</b><span>Completed</span></div>
+          <div class="stat"><b>${count('0')}</b><span>Failed</span></div>
+        </div>
+        <h2>Recent log</h2>
+        ${logTable(logs.slice(0, 8))}
+      `;
+      bindRows();
+    }
+
+    async function operations() {
+      const transactions = await get('/api/v1/esign/transactions');
+      view.innerHTML = `
+        <p class="kicker">Console</p>
+        <h1>Operations</h1>
+        <p class="lead">Every eSign request accepted by this service provider.</p>
+        <div class="filters">
+          <input id="q" placeholder="Search transaction, signer, or ASP" aria-label="Search operations">
+          <select id="state" aria-label="Status">
+            <option value="">All statuses</option>
+            <option value="2">Waiting</option>
+            <option value="1">Completed</option>
+            <option value="0">Failed</option>
+          </select>
+        </div>
+        <div id="rows"></div>
+      `;
+      const draw = () => {
+        const query = document.getElementById('q').value.trim().toLowerCase();
+        const state = document.getElementById('state').value;
+        const rows = transactions.filter((item) => {
+          const haystack = `${item.txn} ${item.signerId} ${item.aspId} ${item.resCode}`.toLowerCase();
+          return (!state || item.status === state) && (!query || haystack.includes(query));
+        });
+        document.getElementById('rows').innerHTML = rows.length ? `<div class="table-wrap"><table>
+          <thead><tr><th>When</th><th>Transaction</th><th>Status</th><th>Signer</th><th>ASP</th><th>Docs</th><th>Callback</th></tr></thead>
+          <tbody>${rows.map((item) => `<tr class="clickable" data-href="#operation/${encodeURIComponent(item.txn)}">
+            <td>${esc(item.createdAt)}</td>
+            <td class="mono">${esc(item.txn)}</td>
+            <td>${badge(item.status)}</td>
+            <td>${esc(item.signerId || 'Chosen at authentication')}</td>
+            <td>${esc(item.aspId)}</td>
+            <td>${item.documents}</td>
+            <td>${item.callbackDelivered ? 'Delivered' : (item.callbackError ? 'Failed' : 'Pending')}</td>
+          </tr>`).join('')}</tbody></table></div>` : '<p class="empty">No operations match.</p>';
+        bindRows();
+      };
+      document.getElementById('q').addEventListener('input', draw);
+      document.getElementById('state').addEventListener('change', draw);
+      draw();
+    }
+
+    async function operation(txn) {
+      let item;
+      try {
+        item = await get('/api/v1/esign/transactions/' + encodeURIComponent(txn));
+      } catch (error) {
+        view.innerHTML = `<p class="kicker">Operation</p><h1>Not found</h1><p class="lead">${esc(error.message)}</p><p><a href="#operations">Back to operations</a></p>`;
+        return;
+      }
+      view.innerHTML = `
+        <p class="kicker">Operation</p>
+        <h1>${esc(item.txn)}</h1>
+        <p>${badge(item.status)} ${item.error ? `<span class="lead">Error ${esc(item.error)}</span>` : ''}</p>
+        <div class="stats">
+          <div class="stat"><b>${esc(item.aspId)}</b><span>ASP</span></div>
+          <div class="stat"><b>${esc(item.signingAlgorithm)}</b><span>Algorithm</span></div>
+          <div class="stat"><b>${item.callbackDelivered ? 'Yes' : 'No'}</b><span>Callback delivered</span></div>
+          <div class="stat"><b>${item.certificateIssued ? 'Yes' : 'No'}</b><span>Certificate issued</span></div>
+        </div>
+        <article class="card">
+          <p><strong>Signer.</strong> ${esc(item.signerId || 'Not fixed until authentication')}</p>
+          <p><strong>Response code.</strong> <span class="mono">${esc(item.resCode)}</span></p>
+          <p><strong>Opened.</strong> ${esc(item.createdAt)}</p>
+          <p><strong>Deadline.</strong> ${esc(item.deadline)}</p>
+          <p><strong>Response URL.</strong> <span class="mono">${esc(item.responseUrl)}</span></p>
+          <p><strong>Redirect URL.</strong> <span class="mono">${esc(item.redirectUrl || 'None')}</span></p>
+          ${item.callbackError ? `<p><strong>Callback error.</strong> ${esc(item.callbackError)}</p>` : ''}
+          <p><a href="${esc(item.authenticationUrl)}">Open signer page</a></p>
+        </article>
+        <h2>Documents</h2>
+        ${item.documents.map((doc) => `<article class="card doc" style="display:block">
+          <strong>${esc(doc.docInfo)}</strong>
+          <p>Id ${esc(doc.id)} · ${esc(doc.responseSigType)}${doc.error ? ' · error ' + esc(doc.error) : ''}</p>
+          <a href="${esc(doc.docUrl)}" target="_blank" rel="noopener">View document</a>
+          <code>SHA-256 ${esc(doc.hashHex)}</code>
+          ${doc.signaturePreview ? `<code>Signature ${esc(doc.signaturePreview)}</code>` : ''}
+        </article>`).join('')}
+        <p><a href="#operations">Back to operations</a> · <a href="#logs">Related logs use this transaction id</a></p>
+      `;
+    }
+
+    async function logs() {
+      const events = await get('/api/v1/audit');
+      const actions = [...new Set(events.map((event) => event.action))].sort();
+      view.innerHTML = `
+        <p class="kicker">Console</p>
+        <h1>Logs</h1>
+        <p class="lead">Audit events for accept, reject, status, OTP, completion, failure, and callback. The newest 300 are kept until restart.</p>
+        <div class="filters">
+          <input id="q" placeholder="Search transaction or detail" aria-label="Search logs">
+          <select id="action" aria-label="Action">${['<option value="">All actions</option>', ...actions.map((action) => `<option>${esc(action)}</option>`)].join('')}</select>
+        </div>
+        <div id="rows"></div>
+      `;
+      const draw = () => {
+        const query = document.getElementById('q').value.trim().toLowerCase();
+        const action = document.getElementById('action').value;
+        const rows = events.filter((event) => {
+          const haystack = `${event.txn} ${event.detail} ${event.action}`.toLowerCase();
+          return (!action || event.action === action) && (!query || haystack.includes(query));
+        });
+        document.getElementById('rows').innerHTML = logTable(rows);
+        bindRows();
+      };
+      document.getElementById('q').addEventListener('input', draw);
+      document.getElementById('action').addEventListener('change', draw);
+      draw();
+    }
+
+    function logTable(events) {
+      if (!events.length) return '<p class="empty">No log events yet.</p>';
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>When</th><th>Action</th><th>Transaction</th><th>Detail</th></tr></thead>
+        <tbody>${events.map((event) => `<tr class="${event.txn ? 'clickable' : ''}" ${event.txn ? `data-href="#operation/${encodeURIComponent(event.txn)}"` : ''}>
+          <td>${esc(event.at)}</td>
+          <td>${esc(event.action)}</td>
+          <td class="mono">${esc(event.txn)}</td>
+          <td class="mono">${esc(event.detail)}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+    }
+
+    async function applications() {
+      const asps = await get('/api/v1/asps');
+      view.innerHTML = `
+        <p class="kicker">Onboarding</p>
+        <h1>Application providers</h1>
+        <p class="lead">Register the ASP signing certificate. A request is accepted only when its XML signature was made with that certificate.</p>
+        <form id="onboard" class="card">
+          <div class="row">
+            <label>ASP id
+              <input name="aspId" value="ASP001" maxlength="32" required>
+            </label>
+            <label>Name
+              <input name="name" value="Reference application" maxlength="80" required>
+            </label>
+          </div>
+          <label>Certificate URL
+            <input name="certificateUrl" value="http://localhost:8081/api/v1/meta/certificate">
+          </label>
+          <p class="hint">The ESP fetches this PEM itself. The running application provider publishes it at that address.</p>
+          <div class="actions">
+            <button class="primary" type="submit">Onboard from URL</button>
+            <button class="secondary" type="button" id="showPem">Paste a certificate</button>
+          </div>
+          <label id="pemWrap" hidden>Certificate PEM
+            <textarea name="certificatePem" rows="8" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+          </label>
+          <button class="secondary" type="button" id="onboardPem" hidden>Onboard pasted certificate</button>
+          <p id="onboardStatus" class="status" role="status"></p>
+        </form>
+        <h2>Onboarded</h2>
+        ${asps.length ? `<div class="table-wrap"><table>
+          <thead><tr><th>ASP</th><th>Certificate</th><th></th></tr></thead>
+          <tbody>${asps.map((asp) => `<tr>
+            <td><strong>${esc(asp.aspId)}</strong><div class="mono">${esc(asp.name)}</div></td>
+            <td><div>${esc(asp.subject)}</div><div class="mono">${esc(asp.fingerprint)}</div><div class="mono">Not after ${esc(asp.notAfter)}</div></td>
+            <td><button class="secondary" type="button" data-revoke="${esc(asp.aspId)}">Revoke</button></td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : '<p class="empty">No application provider is onboarded. Signed requests are rejected until one is registered.</p>'}
+      `;
+      const form = document.getElementById('onboard');
+      const status = document.getElementById('onboardStatus');
+      document.getElementById('showPem').onclick = () => {
+        document.getElementById('pemWrap').hidden = false;
+        document.getElementById('onboardPem').hidden = false;
+      };
+      form.onsubmit = async (event) => {
+        event.preventDefault();
+        status.textContent = 'Fetching the certificate…';
+        try {
+          await postJson('/api/v1/asps/fetch', {
+            aspId: form.aspId.value,
+            name: form.name.value,
+            certificateUrl: form.certificateUrl.value
+          });
+          applications();
+        } catch (error) {
+          status.textContent = error.message;
+        }
+      };
+      document.getElementById('onboardPem').onclick = async () => {
+        status.textContent = 'Checking the certificate…';
+        try {
+          await postJson('/api/v1/asps', {
+            aspId: form.aspId.value,
+            name: form.name.value,
+            certificatePem: form.certificatePem.value
+          });
+          applications();
+        } catch (error) {
+          status.textContent = error.message;
+        }
+      };
+      document.querySelectorAll('[data-revoke]').forEach((button) => {
+        button.onclick = async () => {
+          status.textContent = 'Revoking…';
+          const response = await fetch('/api/v1/asps/' + encodeURIComponent(button.dataset.revoke), { method: 'DELETE' });
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            status.textContent = body.errorMessage || 'The ASP could not be revoked.';
+            return;
+          }
+          applications();
+        };
+      });
+    }
+
+    async function postJson(url, body) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.errorMessage || `Request failed (${response.status})`);
+      return payload;
+    }
+
+    async function service() {
+      const [meta, info, codes] = await Promise.all([
+        get('/api/v1/meta'),
+        get('/api/v1/meta/service'),
+        get('/api/v1/meta/error-codes')
+      ]);
+      const operations = [
+        ['POST /api/v1/esign', 'Accept a signed Esign request and return status 2'],
+        ['POST /api/v1/esign/status', 'Return the current EsignResp for a transaction'],
+        ['GET /api/v1/esign/auth', 'Signer confirmation page'],
+        ['POST /api/v1/esign/auth/otp', 'Ask eKYC for a one-time password'],
+        ['POST /api/v1/esign/auth', 'Check PIN and OTP, sign through the CA, callback the ASP'],
+        ['GET /api/v1/audit', 'Audit log shown on this console']
+      ];
+      view.innerHTML = `
+        <p class="kicker">Console</p>
+        <h1>Service</h1>
+        <p class="lead">${esc(meta.component)} ${esc(meta.specVersion)} on port ${esc(meta.port)}. Request and response examples are in the <a href="/docs.html">documentation</a>.</p>
+        <article class="card">
+          <p><strong>ESP id.</strong> ${esc(info.espId)}</p>
+          <p><strong>Onboarded applications.</strong> ${esc((info.onboardedAspIds || []).join(', ') || 'None')}</p>
+          <p><a href="#applications">Onboard an application provider</a></p>
+          <p><strong>eKYC.</strong> <span class="mono">${esc(info.ekycUrl)}</span></p>
+          <p><strong>OTP.</strong> <span class="mono">${esc(info.otpUrl)}</span></p>
+          <p><strong>CA.</strong> <span class="mono">${esc(info.caUrl)}</span></p>
+          <p><a href="/api/v1/meta/certificate">XML signing certificate</a></p>
+        </article>
+        <h2>Operations</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Call</th><th>What it does</th></tr></thead>
+          <tbody>${operations.map(([call, text]) => `<tr><td class="mono">${esc(call)}</td><td>${esc(text)}</td></tr>`).join('')}</tbody>
+        </table></div>
+        <h2>Error codes</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Code</th><th>Category</th><th>Message</th></tr></thead>
+          <tbody>${codes.map((code) => `<tr><td>${esc(code.code)}</td><td>${esc(code.category)}</td><td>${esc(code.message)}</td></tr>`).join('')}</tbody>
+        </table></div>
+      `;
+    }
+
+    function bindRows() {
+      document.querySelectorAll('[data-href]').forEach((row) => {
+        row.addEventListener('click', () => { location.hash = row.dataset.href; });
+      });
+    }
+
+    window.addEventListener('hashchange', () => route().catch(showError));
+    route().catch(showError);
+    setInterval(() => {
+      const page = (location.hash.replace(/^#/, '') || 'overview').split('/')[0];
+      if (page === 'overview') route().catch(() => {});
+    }, 5000);
+
+    function showError(error) {
+      view.innerHTML = `<h1>Console unavailable</h1><p class="lead">${esc(error.message)}</p>`;
+    }
+  </script>
+</body>
+</html>

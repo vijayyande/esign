@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eKYC</title>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">e</span> eSign <span>eKYC provider</span></a>
+    <nav class="bar-nav"><a href="/docs.html">Documentation</a><span class="spec">API 3.3</span></nav>
+  </header>
+  <main class="layout">
+    <section>
+      <p class="kicker">Identity · port 8083</p>
+      <h1>eKYC provider</h1>
+      <p class="lead">PIN, SMS OTP, bank KYC, and organisation KYC stay on this service. The application provider never receives the attributes.</p>
+      <p><a class="button primary" href="/docs.html">Documentation and examples</a></p>
+    </section>
+    <section class="card">
+      <h2>Demo signer</h2>
+      <dl class="facts">
+        <div><dt>Signer id</dt><dd>demo.user@username.ESP001</dd></div>
+        <div><dt>PIN</dt><dd>123456</dd></div>
+        <div><dt>Mobile</dt><dd>9876543210</dd></div>
+        <div><dt>PAN</dt><dd>ABCDE1234F</dd></div>
+      </dl>
+      <p class="hint">The one-time password is returned by <code>POST /api/v1/otp</code> while demo mode is on. No SMS is sent.</p>
+    </section>
+  </main>
+</body>
+</html>

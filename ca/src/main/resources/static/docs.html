@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CA documentation</title>
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">e</span> eSign <span>Certifying authority</span></a>
+    <nav class="bar-nav"><a href="/docs.html">Documentation</a><span class="spec">API 3.3</span></nav>
+  </header>
+  <main class="guide">
+    <p class="kicker">Certifying authority · port 8084</p>
+    <h1>CA documentation</h1>
+    <p class="lead">The ESP calls this service after eKYC succeeds. It issues a short-lived certificate for the signer name and signs each document hash. The end-entity private key is not stored.</p>
+    <nav class="toc" aria-label="On this page">
+      <a href="#try">Try the API</a>
+      <a href="#endpoints">Endpoints</a>
+      <a href="#issue">Issue a certificate</a>
+      <a href="#types">Signature types</a>
+      <a href="#errors">Errors</a>
+      <a href="#others">Other services</a>
+    </nav>
+
+    <h2 id="try">Try the API</h2>
+    <p>Choose an operation, change the fields, and send the call to this service. Issuing a certificate creates a real short-lived certificate. The end-entity private key is discarded after the response.</p>
+    <form class="card tester" id="tester">
+      <label>Operation
+        <select id="operation"></select>
+      </label>
+      <div id="fields"></div>
+      <button class="primary" type="submit">Send</button>
+    </form>
+    <pre class="live" id="live">The response appears here.</pre>
+    <div id="live-extra"></div>
+
+    <h2 id="endpoints">Endpoints</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/api/v1/ca/certificate</code></td><td>PEM of the reference CA</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/certificates</code></td><td>Issue a signer certificate and sign the supplied hashes</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta</code></td><td>Component name and spec version</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/meta/error-codes</code></td><td>Section 5 catalogue</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/audit</code></td><td>Recent <code>CERTIFICATE_ISSUED</code> events</td></tr>
+      </tbody>
+    </table></div>
+    <p>The CA keystore is <code>data/ca/ca.p12</code>, password <code>changeit</code>. It is created on first start as a self-signed RSA 2048 certificate, subject <code>CN=eSign Reference CA, O=eSign Reference, C=IN</code>, with basic constraints CA and key usage <code>keyCertSign</code> and <code>cRLSign</code>. End-entity certificates last <code>esign.certificate-validity-hours</code> (default 24), use RSA 2048 or EC secp256r1, and have <code>digitalSignature</code> key usage only.</p>
+
+    <h2 id="issue">Issue a certificate</h2>
+    <p><code>signingAlgorithm</code> is <code>RSA</code> or <code>ECDSA</code>. Each document needs an id, a 64-character SHA-256 hex, and a response signature type. A bad hash or type is reported on that item and does not fail the other documents.</p>
+<pre>curl.exe -s -H "Content-Type: application/json" -d "{\"subjectName\":\"Demo Signer\",\"signingAlgorithm\":\"RSA\",\"documents\":[{\"id\":\"1\",\"hashHex\":\"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824\",\"responseSigType\":\"PKCS7pdf\"}]}" http://localhost:8084/api/v1/certificates</pre>
+<pre>{
+  "certificateBase64": "DER of the end-entity certificate",
+  "certificatePem": "-----BEGIN CERTIFICATE-----...",
+  "caCertificateBase64": "DER of the reference CA",
+  "signatures": [
+    {
+      "id": "1",
+      "signatureBase64": "CMS or raw signature",
+      "sigHashAlgorithm": "SHA256",
+      "error": ""
+    }
+  ]
+}</pre>
+    <p>The subject is <code>CN=&lt;subjectName&gt;, OU=eSign, O=eSign Reference CA, C=IN</code>. A blank subject name, an empty document list, or an algorithm other than RSA or ECDSA is a request error:</p>
+<pre>{"errorCode":"101","errorMessage":"Invalid Request Format"}</pre>
+    <p>No document is error <code>108</code>.</p>
+
+    <h2 id="types">Signature types</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>responseSigType</th><th>What is returned</th></tr></thead>
+      <tbody>
+        <tr><td><code>raw</code></td><td>PKCS#1 DigestInfo for RSA, or ECDSA over the 32-byte hash</td></tr>
+        <tr><td><code>PKCS7</code></td><td>Detached CMS with the signer certificate only</td></tr>
+        <tr><td><code>PKCS7pdf</code></td><td>Detached CMS that also contains the CA certificate</td></tr>
+        <tr><td><code>PKCS7complete</code></td><td>Same certificate set as PKCS7pdf in this reference</td></tr>
+      </tbody>
+    </table></div>
+    <p>The CMS <code>message-digest</code> attribute is the precomputed SHA-256. The signed content bytes are empty, which matches a hash the ASP computed before the call. There is no OCSP or CRL responder, so the signature does not carry revocation data.</p>
+    <p>One bad item leaves the others usable. Here the second hash is too short, so its <code>error</code> is <code>201</code> and the first signature is still produced:</p>
+<pre>{
+  "subjectName": "Demo Signer",
+  "signingAlgorithm": "RSA",
+  "documents": [
+    {"id": "1", "hashHex": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", "responseSigType": "PKCS7"},
+    {"id": "2", "hashHex": "abcd", "responseSigType": "PKCS7pdf"}
+  ]
+}</pre>
+    <p>An unknown <code>responseSigType</code> sets that item's <code>error</code> to <code>202</code>.</p>
+
+    <h2 id="errors">Errors</h2>
+    <p>This service uses JSON for issuance, so the HTTP status comes from the catalogue. Per-document problems stay in <code>signatures[].error</code> and the HTTP call still succeeds. The full list is <a href="/api/v1/meta/error-codes">/api/v1/meta/error-codes</a>.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Code</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td>101</td><td>Missing subject name, or signing algorithm is not RSA or ECDSA</td></tr>
+        <tr><td>108</td><td>No documents were supplied</td></tr>
+        <tr><td>201</td><td>That document's hash is not 32 bytes of hex</td></tr>
+        <tr><td>202</td><td>That document's response signature type is not raw, PKCS7, PKCS7pdf, or PKCS7complete</td></tr>
+        <tr><td>199</td><td>The certificate could not be built</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="others">Other services</h2>
+    <ul>
+      <li><a href="http://localhost:8082/docs.html">ESP</a> is the only caller during a normal signature. It posts here after eKYC.</li>
+      <li><a href="http://localhost:8081/docs.html">ASP</a> embeds the CMS from the ESP response into the PDF byte range.</li>
+      <li><a href="http://localhost:8083/docs.html">eKYC</a> authenticates the signer before a certificate is issued.</li>
+    </ul>
+  </main>
+  <script src="/try.js"></script>
+  <script>
+    TryApi.mount({
+      form: document.getElementById('tester'),
+      live: document.getElementById('live'),
+      extra: document.getElementById('live-extra'),
+      operations: [
+        { label: 'GET /api/v1/ca/certificate', path: '/api/v1/ca/certificate' },
+        { label: 'GET /api/v1/meta', path: '/api/v1/meta' },
+        { label: 'GET /api/v1/meta/error-codes', path: '/api/v1/meta/error-codes' },
+        { label: 'GET /api/v1/audit', path: '/api/v1/audit' },
+        {
+          label: 'POST /api/v1/certificates',
+          method: 'POST',
+          path: '/api/v1/certificates',
+          body: 'json',
+          note: 'The hash is 64 hex characters. The sample is SHA-256 of the word hello. A second hash is optional.',
+          fields: [
+            { name: 'subjectName', label: 'Subject name', value: 'Demo Signer' },
+            { name: 'signingAlgorithm', label: 'Algorithm', type: 'select', options: ['RSA', 'ECDSA'], value: 'RSA' },
+            { name: 'id', label: 'Document id', value: '1' },
+            { name: 'hashHex', label: 'SHA-256 hex', value: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824' },
+            { name: 'responseSigType', label: 'Signature type', type: 'select', options: ['PKCS7pdf', 'PKCS7', 'PKCS7complete', 'raw'], value: 'PKCS7pdf' },
+            { name: 'id2', label: 'Second document id', placeholder: 'optional' },
+            { name: 'hashHex2', label: 'Second SHA-256 hex', placeholder: 'optional' },
+            { name: 'responseSigType2', label: 'Second signature type', type: 'select', options: ['', 'PKCS7pdf', 'PKCS7', 'PKCS7complete', 'raw'], value: '' }
+          ],
+          build(read) {
+            const documents = [{
+              id: read('id').trim(),
+              hashHex: read('hashHex').trim(),
+              responseSigType: read('responseSigType')
+            }];
+            if (read('id2').trim() || read('hashHex2').trim()) {
+              documents.push({
+                id: read('id2').trim(),
+                hashHex: read('hashHex2').trim(),
+                responseSigType: read('responseSigType2') || 'PKCS7pdf'
+              });
+            }
+            return {
+              subjectName: read('subjectName').trim(),
+              signingAlgorithm: read('signingAlgorithm'),
+              documents
+            };
+          }
+        }
+      ]
+    });
+  </script>
+</body>
+</html>
