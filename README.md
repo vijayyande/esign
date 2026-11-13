@@ -145,6 +145,13 @@ mvn install
 
 ## Run
 
+<img width="1903" height="817" alt="image" src="https://github.com/user-attachments/assets/e2588295-1b2f-4448-85af-ed167a646ff8" />
+
+<img width="1900" height="823" alt="image" src="https://github.com/user-attachments/assets/77281cf7-82d8-493f-832c-7a6be3692487" />
+
+<img width="1916" height="1032" alt="image" src="https://github.com/user-attachments/assets/cf0b7d74-fa5a-4e9c-89c0-3c4811cd252f" />
+
+
 Start eKYC and the CA first, then the ESP, then the ASP. All commands are run from the repository root so that the relative `data/` paths resolve.
 
 ### Option 1 — start scripts
